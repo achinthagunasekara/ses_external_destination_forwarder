@@ -1,4 +1,4 @@
-# ses_external_destination_forwarder
+# Forward Incoming Email to an External Destination
 
 Instructions was taken from [this link](https://aws.amazon.com/blogs/messaging-and-targeting/forward-incoming-email-to-an-external-destination/).
 
