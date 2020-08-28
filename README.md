@@ -8,4 +8,5 @@ Instructions was taken from [this link](https://aws.amazon.com/blogs/messaging-a
 
 ## Instructions
 
-Before using this CF template, zip the [main.py]()
+Before using this CF template, zip the [main.py](https://github.com/achinthagunasekara/ses_external_destination_forwarder/blob/master/main.py) and put into a S3 bucket.
+This will be needed by the Lambda function.
