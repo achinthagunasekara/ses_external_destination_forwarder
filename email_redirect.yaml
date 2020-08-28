@@ -1,0 +1,161 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+Description: This template redirects my emails from my custom domain to personal email address.
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC ID to build the stack in
+    ConstraintDescription: Must be the VPC Id of an existing VPC in this account
+  Subnets:
+    Type: CommaDelimitedList
+    Description: The list of subnet IDs in above VPC
+    ConstraintDescription: must be a list of at least two existing subnets associated with at least two different availability zones
+  MyEmailAddress:
+    Type: String
+    Description: Email address to forward  emails to
+    ConstraintDescription: Must be a valid email address
+  LambdaCodeS3Bucket:
+    Type: String
+    Description: S3 bucket name where the Lambda code is stored
+    ConstraintDescription: Must be a valid S3 bucket
+  LambdaCodeS3Key:
+    Type: String
+    Description: S3 bucket key of the Lambda code is stored
+    ConstraintDescription: Must be a valid S3 key
+Resources:
+  EmailStoreS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub
+        - ${StackName}-bucket
+        - { StackName: !Ref AWS::StackName }
+      AccessControl: Private
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+  EmailStoreS3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref EmailStoreS3Bucket
+      PolicyDocument:
+        Statement:
+          -
+            Action:
+              - "s3:PutObject"
+            Effect: "Allow"
+            Resource:
+              Fn::Join:
+                - ""
+                -
+                  - "arn:aws:s3:::"
+                  - !Ref EmailStoreS3Bucket
+                  - "/*"
+            Principal:
+              Service: ses.amazonaws.com
+            Condition:
+              StringEquals:
+                aws:Referer:
+                  - !Ref AWS::AccountId
+  EmailSenderLambdaRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: !Sub
+          - ${StackName}-log-policy
+          - { StackName: !Ref AWS::StackName }
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogStream"
+                  - "logs:CreateLogGroup"
+                  - "logs:PutLogEvents"
+                  - "xray:PutTraceSegments"
+                  - "xray:PutTelemetryRecords"
+                Resource: '*'
+        - PolicyName: !Sub
+          - ${StackName}-s3-and-ses-policy
+          - { StackName: !Ref AWS::StackName }
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "s3:GetObject"
+                  - "ses:SendRawEmail"
+                Resource:
+                  - !Sub
+                    - "arn:aws:s3:::${BucketName}/*"
+                    - { BucketName: !Ref EmailStoreS3Bucket }
+                  - !Sub
+                    - "arn:aws:ses:${Region}:${AccountID}:identity/*"
+                    - { Region: !Ref AWS::Region, AccountID: !Ref AWS::AccountId }
+  EmailSenderLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub
+        - ${StackName}-lambda
+        - { StackName: !Ref AWS::StackName }
+      Runtime: python3.7
+      Timeout: 30
+      Role: !GetAtt EmailSenderLambdaRole.Arn
+      Handler: main.lambda_handler
+      Code:
+        S3Bucket: !Ref LambdaCodeS3Bucket
+        S3Key: !Ref LambdaCodeS3Key
+      Description: Invoke the email sender code
+      TracingConfig:
+        Mode: Active
+      Environment:
+        Variables:
+          MailS3Bucket: !Ref EmailStoreS3Bucket
+          MailS3Prefix: ""
+          MailSender: !Ref MyEmailAddress
+          MailRecipient: !Ref MyEmailAddress
+          Region: !Ref AWS::Region
+          #  EmailNotifySnsTopic:
+          #    Type: AWS::SNS::Topic
+          #    Properties:
+          #      TopicName: !Sub
+          #        - ${StackName}-sns
+          #        - { StackName: !Ref AWS::StackName }
+          #      DisplayName: !Sub
+          #        - ${StackName}-sns
+          #        - { StackName: !Ref AWS::StackName }
+          #      Subscription:
+          #        - Endpoint: !Ref MyEmailAddress
+          #          Protocol: email
+  ReceiptRuleSet:
+    Type: AWS::SES::ReceiptRuleSet
+    Properties:
+      RuleSetName: !Sub
+        - ${StackName}-receipt-rule-set
+        - { StackName: !Ref AWS::StackName }
+  ReceiptRule:
+    Type: AWS::SES::ReceiptRule
+    Properties:
+      RuleSetName: !Ref ReceiptRuleSet
+      Rule:
+        Actions:
+          - S3Action:
+              BucketName: !Ref EmailStoreS3Bucket
+          - LambdaAction:
+              FunctionArn: !GetAtt EmailSenderLambda.Arn
+        Enabled: true
+        Name: !Sub
+          - ${StackName}-receipt-rule
+          - { StackName: !Ref AWS::StackName }
+        Recipients:
+          - contact@achinthagunasekara.com
