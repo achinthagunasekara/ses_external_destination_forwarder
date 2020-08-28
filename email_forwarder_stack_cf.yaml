@@ -1,15 +1,6 @@
 ---
 AWSTemplateFormatVersion: 2010-09-09
-Description: This template redirects my emails from my custom domain to personal email address.
 Parameters:
-  VpcId:
-    Type: AWS::EC2::VPC::Id
-    Description: VPC ID to build the stack in
-    ConstraintDescription: Must be the VPC Id of an existing VPC in this account
-  Subnets:
-    Type: CommaDelimitedList
-    Description: The list of subnet IDs in above VPC
-    ConstraintDescription: must be a list of at least two existing subnets associated with at least two different availability zones
   MyEmailAddress:
     Type: String
     Description: Email address to forward  emails to
@@ -22,6 +13,10 @@ Parameters:
     Type: String
     Description: S3 bucket key of the Lambda code is stored
     ConstraintDescription: Must be a valid S3 key
+  Recipients:
+    Type: CommaDelimitedList
+    Description: List of recipients to receive emails for
+    ConstraintDescription: must be a list of email addresses
 Resources:
   EmailStoreS3Bucket:
     Type: AWS::S3::Bucket
@@ -35,6 +30,9 @@ Resources:
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
+      Rules:
+        -
+          ExpirationInDays: 7
   EmailStoreS3BucketPolicy:
     Type: AWS::S3::BucketPolicy
     Properties:
@@ -125,18 +123,13 @@ Resources:
           MailSender: !Ref MyEmailAddress
           MailRecipient: !Ref MyEmailAddress
           Region: !Ref AWS::Region
-          #  EmailNotifySnsTopic:
-          #    Type: AWS::SNS::Topic
-          #    Properties:
-          #      TopicName: !Sub
-          #        - ${StackName}-sns
-          #        - { StackName: !Ref AWS::StackName }
-          #      DisplayName: !Sub
-          #        - ${StackName}-sns
-          #        - { StackName: !Ref AWS::StackName }
-          #      Subscription:
-          #        - Endpoint: !Ref MyEmailAddress
-          #          Protocol: email
+  SesLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt EmailSenderLambda.Arn
+      Principal: ses.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
   ReceiptRuleSet:
     Type: AWS::SES::ReceiptRuleSet
     Properties:
@@ -157,5 +150,4 @@ Resources:
         Name: !Sub
           - ${StackName}-receipt-rule
           - { StackName: !Ref AWS::StackName }
-        Recipients:
-          - contact@achinthagunasekara.com
+        Recipients: !Ref Recipients
