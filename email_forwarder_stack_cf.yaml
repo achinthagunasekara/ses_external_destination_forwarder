@@ -30,9 +30,11 @@ Resources:
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
-      Rules:
-        -
-          ExpirationInDays: 7
+      LifecycleConfiguration:
+        Rules:
+          - Id: BucketCleanUp
+            ExpirationInDays: 7
+            Status: Enabled
   EmailStoreS3BucketPolicy:
     Type: AWS::S3::BucketPolicy
     Properties:
